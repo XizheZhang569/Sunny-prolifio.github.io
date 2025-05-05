@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+  <meta charset="UTF-8">
+  <title>Sunny 装置作品集</title>
+  <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+  <style>
+    body {
+      font-family: 'Helvetica Neue', sans-serif;
+      padding: 30px;
+      background-color: #f9f9f9;
+      color: #333;
+    }
+    h2 {
+      text-align: center;
+      margin-bottom: 30px;
+    }
+    label {
+      display: block;
+      margin: 8px 0 4px;
+    }
+    input {
+      width: 80px;
+      padding: 4px;
+      margin-bottom: 10px;
+    }
+    #controls {
+      max-width: 500px;
+      margin: 0 auto 20px auto;
+      padding: 20px;
+      background-color: #fff;
+      border-radius: 8px;
+      box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    }
+    button {
+      margin-top: 10px;
+      margin-right: 10px;
+      padding: 6px 12px;
+      font-size: 14px;
+    }
+    #functionDisplay {
+      max-width: 500px;
+      margin: 0 auto;
+      font-family: monospace;
+      background: #eef;
+      padding: 10px;
+      border-radius: 5px;
+    }
+  </style>
+</head>
+<body>
+  <h2>Sunny 装置作品集｜情绪张力伞面生成器</h2>
+
+  <div id="controls">
+    <label>快乐值：</label><input type="number" id="joy" value="0.5" step="0.1" min="-1" max="1">
+    <label>信任值：</label><input type="number" id="trust" value="0.7" step="0.1" min="-1" max="1">
+    <label>恐惧值：</label><input type="number" id="fear" value="-0.4" step="0.1" min="-1" max="1">
+    <label>惊讶值：</label><input type="number" id="surprise" value="-0.3" step="0.1" min="-1" max="1">
+    <label>自然程度（0~1）：</label><input type="number" id="naturalness" value="0.5" step="0.1" min="0" max="1">
+    <br>
+    <button onclick="updatePlot()">生成图形</button>
+    <button onclick="downloadPlot()">导出图像（PNG）</button>
+    <button onclick="copyFunction()">复制函数表达式</button>
+  </div>
+
+  <div id="functionDisplay"></div>
+  <div id="plot" style="width: 100%; height: 80vh;"></div>
+
+  <script>
+    let currentFunction = '';
+
+    function updatePlot() {
+      let joy = parseFloat(document.getElementById('joy').value);
+      let trust = parseFloat(document.getElementById('trust').value);
+      let fear = parseFloat(document.getElementById('fear').value);
+      let surprise = parseFloat(document.getElementById('surprise').value);
+      let N = parseFloat(document.getElementById('naturalness').value);
+
+      // 强化模型弯曲感：增强 xy 项的权重
+      let M = [
+        [ 4,  1,  1, 1],
+        [ 4, -1,  1, 1],
+        [ 4, -1, -1, 1],
+        [ 4,  1, -1, 1]
+      ];
+      let Z = [joy, trust, fear, surprise];
+      let MT = math.transpose(M);
+      let MTM = math.multiply(MT, M);
+      let MTB = math.multiply(MT, Z);
+      let coeffs = math.lusolve(MTM, MTB).map(row => row[0]);
+      let [a, b, c, d] = coeffs;
+
+      currentFunction = `z(x, y) = ${N.toFixed(3)} × (${a.toFixed(3)}·xy + ${b.toFixed(3)}·x + ${c.toFixed(3)}·y + ${d.toFixed(3)})`;
+      document.getElementById('functionDisplay').innerText = currentFunction;
+
+      let x = [], y = [], z = [], step = 0.05;
+      let zMin = Infinity, zMax = -Infinity;
+      for (let i = -1; i <= 1; i += step) {
+        let rowX = [], rowY = [], rowZ = [];
+        for (let j = -1; j <= 1; j += step) {
+          rowX.push(i);
+          rowY.push(j);
+          let zVal = N * (a * i * j + b * i + c * j + d);
+          rowZ.push(zVal);
+          if (zVal > zMax) zMax = zVal;
+          if (zVal < zMin) zMin = zVal;
+        }
+        x.push(rowX);
+        y.push(rowY);
+        z.push(rowZ);
+      }
+
+      let surface = {
+        type: 'surface',
+        x: x,
+        y: y,
+        z: z,
+        colorscale: [[0, 'blue'], [0.5, 'white'], [1, 'red']],
+        showscale: true,
+        cmin: zMin,
+        cmax: zMax,
+        contours: {
+          z: { show: true, project: { z: true } }
+        }
+      };
+
+      // 添加正方体边框线框
+      let cubeLines = {
+        type: 'scatter3d',
+        mode: 'lines',
+        line: { color: 'black', width: 2 },
+        x: [1, -1, -1, 1, 1, 1, 1, 1, -1, -1, -1, -1],
+        y: [1, 1, -1, -1, 1, 1, -1, -1, -1, -1, 1, 1],
+        z: [1, 1, 1, 1, 1, -1, -1, 1, 1, -1, -1, 1],
+        name: '边界'
+      };
+
+      let layout = {
+        scene: {
+          xaxis: { title: 'x（情绪维度1）', range: [-1.2, 1.2] },
+          yaxis: { title: 'y（情绪维度2）', range: [-1.2, 1.2] },
+          zaxis: { title: 'z（张力形变）' }
+        },
+        title: currentFunction,
+        margin: { l: 0, r: 0, b: 0, t: 50 }
+      };
+
+      Plotly.newPlot('plot', [surface, cubeLines], layout);
+    }
+
+    function downloadPlot() {
+      Plotly.downloadImage('plot', {format: 'png', filename: 'Sunny_Emotion_Surface'});
+    }
+
+    function copyFunction() {
+      navigator.clipboard.writeText(currentFunction).then(() => {
+        alert('函数表达式已复制！');
+      });
+    }
+  </script>
+
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mathjs/11.11.1/math.min.js"></script>
+</body>
+</html>
